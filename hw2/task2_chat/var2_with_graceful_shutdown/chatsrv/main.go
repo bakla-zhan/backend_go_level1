@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	wg := &sync.WaitGroup{}
+	wgMain := &sync.WaitGroup{}
 	log.Println("server started!")
 
 	go broadcaster(ctx)
@@ -48,8 +48,8 @@ func main() {
 			if err != nil {
 				log.Println(err)
 			} else {
-				wg.Add(1)
-				go handleConn(ctx, conn, wg)
+				wgMain.Add(1)
+				go handleConn(ctx, conn, wgMain)
 			}
 		}
 	}()
@@ -58,16 +58,30 @@ func main() {
 
 	log.Println("main done")
 	listener.Close()
-	wg.Wait()
+	wgMain.Wait()
 	log.Println("exit")
 }
 
-func handleConn(ctx context.Context, conn net.Conn, wg *sync.WaitGroup) {
-	defer wg.Done()
+func handleConn(ctx context.Context, conn net.Conn, wgMain *sync.WaitGroup) {
+	defer wgMain.Done()
 	defer conn.Close()
+
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("handleConn done")
+				conn.Close()
+				wgMain.Done()
+				return
+			default:
+			}
+		}
+	}()
 
 	ch := make(chan string)
 	who := make(map[string]string)
+	wgHC := &sync.WaitGroup{}
 
 	go clientWriter(ctx, conn, ch)
 
@@ -81,25 +95,24 @@ func handleConn(ctx context.Context, conn net.Conn, wg *sync.WaitGroup) {
 	log.Println(address + " has arrived")
 
 	input := bufio.NewScanner(conn)
-	for input.Scan() {
-		select {
-		case <-ctx.Done():
-			fmt.Println("handleConn done")
-			return
-		default:
+	wgHC.Add(1)
+	go func() {
+		for input.Scan() {
+			if strings.HasPrefix(input.Text(), "nickname:") {
+				who[address] = strings.TrimPrefix(input.Text(), "nickname:")
+				messages <- address + " is now " + who[address]
+				continue
+			}
+			if who[address] == "" {
+				messages <- address + ": " + input.Text()
+			} else {
+				messages <- who[address] + ": " + input.Text()
+			}
 		}
-		if strings.HasPrefix(input.Text(), "nickname:") {
-			who[address] = strings.TrimPrefix(input.Text(), "nickname:")
-			messages <- address + " is now " + who[address]
-			continue
-		}
-		if who[address] == "" {
-			messages <- address + ": " + input.Text()
-		} else {
-			messages <- who[address] + ": " + input.Text()
-		}
-	}
+		wgHC.Done()
+	}()
 
+	wgHC.Wait()
 	leaving <- ch
 	if who[address] == "" {
 		messages <- address + " has left"

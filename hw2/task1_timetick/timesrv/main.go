@@ -77,7 +77,6 @@ func main() {
 func handleConn(ctx context.Context, conn net.Conn, wg *sync.WaitGroup, msg chan string) {
 	defer wg.Done()
 	defer conn.Close()
-	// каждую 1 секунду отправлять клиентам текущее время сервера
 	tck := time.NewTicker(time.Second)
 	for {
 		select {
