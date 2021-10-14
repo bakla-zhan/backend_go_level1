@@ -1,0 +1,6 @@
+curl -d '<?xml version="1.0" encoding="UTF-8"?>
+<root>
+  <age>30</age>
+  <name>John</name>
+  <salary>3000.5</salary>
+</root>' -H 'content-type:application/json' localhost:8080
